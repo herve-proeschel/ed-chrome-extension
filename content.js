@@ -186,6 +186,25 @@
         return /^\d{4}-\d{2}-\d{2}$/.test(key) ? key : '';
     }
 
+    function getSchedulePosition(event) {
+        const start = parseScheduleDate(event.start_date);
+        const end = parseScheduleDate(event.end_date) || start;
+        if (!start || !end) return null;
+
+        const dayStart = 8 * 60;
+        const dayEnd = 18 * 60;
+        const startMinutes = start.getHours() * 60 + start.getMinutes();
+        const endMinutes = end.getHours() * 60 + end.getMinutes();
+        const visibleStart = Math.max(dayStart, startMinutes);
+        const visibleEnd = Math.min(dayEnd, Math.max(visibleStart + 1, endMinutes));
+        if (visibleStart >= dayEnd || visibleEnd <= dayStart) return null;
+
+        return {
+            top: ((visibleStart - dayStart) / (dayEnd - dayStart)) * 100,
+            height: ((visibleEnd - visibleStart) / (dayEnd - dayStart)) * 100
+        };
+    }
+
     async function collectSchedule(btn) {
         const eleveId = getEleveId();
         if (!eleveId) {
@@ -270,8 +289,11 @@
             const day = new Date(week.start);
             day.setDate(day.getDate() + index);
             const key = dateKey(day);
-            const dayEvents = week.events.filter(event => event.scheduleDateKey === key);
-            const cards = dayEvents.map(event => {
+            const dayEvents = week.events
+                .filter(event => event.scheduleDateKey === key)
+                .map(event => ({ event, position: getSchedulePosition(event) }))
+                .filter(item => item.position);
+            const cards = dayEvents.map(({ event, position }) => {
                 const color = /^#[0-9a-f]{6}$/i.test(event.color) ? event.color : '#d9e8f3';
                 const endTime = formatScheduleTime(event.end_date);
                 const cancelled = event.isAnnule ? '<span class="schedule-cancelled">Annulé</span>' : '';
@@ -279,7 +301,7 @@
                 const teacher = event.prof?.trim();
                 const group = event.groupe?.trim();
                 return `
-                    <article class="schedule-event${event.isAnnule ? ' is-cancelled' : ''}" style="--event-color: ${color}">
+                    <article class="schedule-event${event.isAnnule ? ' is-cancelled' : ''}" style="--event-color: ${color}; top: ${position.top}%; height: ${position.height}%">
                         <div class="schedule-time">${formatScheduleTime(event.start_date)}${endTime ? ` - ${endTime}` : ''}</div>
                         <h3>${escapeHtml(event.matiere || event.text || 'Cours')}</h3>
                         ${cancelled}
@@ -289,11 +311,12 @@
                     </article>
                 `;
             }).join('');
+            const cardsHtml = cards || '<div class="schedule-empty">Aucun cours</div>';
 
             return `
                 <section class="schedule-day">
                     <header><strong>${day.toLocaleDateString('fr-FR', { weekday: 'short' }).replace('.', '')}</strong><span>${day.toLocaleDateString('fr-FR', { day: 'numeric', month: 'short' })}</span></header>
-                    <div class="schedule-events">${cards || '<div class="schedule-empty">Aucun cours</div>'}</div>
+                    <div class="schedule-events">${cardsHtml}</div>
                 </section>
             `;
         }).join('');
@@ -338,8 +361,9 @@
                     .schedule-day:last-child { border-right: 0; }
                     .schedule-day > header { display: flex; justify-content: space-between; align-items: baseline; gap: 4px; padding: 7px 6px; background: #e8f1f6; border-bottom: 1px solid #b8cbd8; color: #0b4e84; text-transform: capitalize; font-size: 11px; }
                     .schedule-day > header span { color: #668096; font-size: 10px; }
-                    .schedule-events { padding: 5px; }
-                    .schedule-event { margin-bottom: 5px; padding: 6px; border-left: 4px solid var(--event-color); border-radius: 3px; background: color-mix(in srgb, var(--event-color) 24%, white); break-inside: avoid; font-size: 9px; }
+                    .schedule-events { position: relative; height: 150mm; overflow: hidden; background: repeating-linear-gradient(to bottom, transparent 0, transparent calc(10% - 1px), #dce7ed calc(10% - 1px), #dce7ed 10%); }
+                    .schedule-events::before { position: absolute; inset: 0 auto 0 2px; color: #78909f; content: '08:00\\A\\A09:00\\A\\A10:00\\A\\A11:00\\A\\A12:00\\A\\A13:00\\A\\A14:00\\A\\A15:00\\A\\A16:00\\A\\A17:00\\A\\A18:00'; font-size: 7px; line-height: 15mm; white-space: pre; pointer-events: none; }
+                    .schedule-event { position: absolute; left: 22px; right: 5px; margin: 0; min-height: 3mm; overflow: hidden; padding: 4px; border-left: 4px solid var(--event-color); border-radius: 3px; background: color-mix(in srgb, var(--event-color) 24%, white); break-inside: avoid; font-size: 8px; }
                     .schedule-event h3 { margin: 2px 0 4px; color: #173c56; font-size: 10px; line-height: 1.15; }
                     .schedule-time { color: #0b4e84; font-size: 9px; font-weight: 700; }
                     .schedule-detail { overflow: hidden; color: #536b7c; text-overflow: ellipsis; white-space: nowrap; }
