@@ -1,0 +1,62 @@
+name: Package Chrome extension
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Version à empaqueter (vide = version du manifeste)"
+        required: false
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  package:
+    name: Validate and package
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Validate manifest and scripts
+        shell: bash
+        run: |
+          node -e "const fs=require('fs'); const manifest=JSON.parse(fs.readFileSync('manifest.json','utf8')); if (manifest.manifest_version !== 3) throw new Error('Manifest V3 requis'); if (!/^\\d+\\.\\d+\\.\\d+$/.test(manifest.version)) throw new Error('Version Chrome invalide: '+manifest.version); for (const file of ['content.js','background.js']) { if (!fs.existsSync(file)) throw new Error('Fichier manquant: '+file); } for (const file of ['content.js','background.js']) { require('child_process').execFileSync(process.execPath, ['--check', file], {stdio:'inherit'}); } console.log('Version:', manifest.version);"
+
+      - name: Build upload directory
+        shell: bash
+        run: |
+          rm -rf package
+          mkdir -p package/icons
+          cp manifest.json content.js background.js LICENSE README.md package/
+          cp icons/* package/icons/
+
+          requested_version="${{ inputs.version }}"
+          if [[ -n "$requested_version" ]]; then
+            node -e "const fs=require('fs'); const file='package/manifest.json'; const manifest=JSON.parse(fs.readFileSync(file,'utf8')); const version=process.argv[1]; if (!/^\\d+\\.\\d+\\.\\d+$/.test(version)) throw new Error('Version Chrome invalide: '+version); manifest.version=version; fs.writeFileSync(file, JSON.stringify(manifest, null, 2)+'\\n');" "$requested_version"
+          fi
+
+          package_version=$(node -p "require('./package/manifest.json').version")
+          package_name="ecole-directe-impression-v${package_version}.zip"
+          (cd package && zip -r "../${package_name}" .)
+          echo "PACKAGE_NAME=${package_name}" >> "$GITHUB_ENV"
+
+      - name: Validate packaged manifest
+        shell: bash
+        run: |
+          node -e "const fs=require('fs'); const manifest=JSON.parse(fs.readFileSync('package/manifest.json','utf8')); console.log('Package prêt pour Chrome Web Store:', manifest.name, manifest.version);"
+
+      - name: Upload Web Store package
+        uses: actions/upload-artifact@v4
+        with:
+          name: chrome-extension-package
+          path: ${{ env.PACKAGE_NAME }}
+          if-no-files-found: error
+          retention-days: 30

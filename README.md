@@ -36,4 +36,16 @@ Le bouton flottant apparaît automatiquement. L'impression reprend les créneaux
 - Si Chrome signale un problème de permission ou de manifeste, vérifier que le dossier sélectionné contient bien `manifest.json`.
 - Les fenêtres pop-up doivent être autorisées pour le site afin d'ouvrir la feuille d'impression.
 
+## Préparer le package Chrome Web Store
+
+Le dépôt contient un workflow GitHub Actions manuel : `.github/workflows/package-extension.yml`.
+
+1. Ouvrir l'onglet **Actions** du dépôt GitHub.
+2. Sélectionner **Package Chrome extension**.
+3. Cliquer sur **Run workflow**.
+4. Laisser la version vide pour utiliser celle de `manifest.json`, ou saisir une version comme `1.4.0`.
+5. Télécharger l'artefact `chrome-extension-package` à la fin du workflow.
+
+Le ZIP généré contient uniquement les fichiers nécessaires à l'extension et peut être envoyé dans le tableau de bord du Chrome Web Store. Le workflow ne publie pas automatiquement l'extension : cette étape nécessite les identifiants Chrome Web Store et doit être faite séparément.
+
 L'extension utilise uniquement un script de contenu sur `ecoledirecte.com` et ne demande aucune permission supplémentaire.
