@@ -11,6 +11,7 @@ Extension Chrome Manifest V3 pour imprimer proprement le cahier de texte et l'em
 - Activités positionnées selon leur heure de début et dimensionnées selon leur durée.
 - Affichage des matières, horaires, salles, professeurs, groupes et cours annulés.
 - Bouton d'action accessible depuis les pages concernées d'ÉcoleDirecte.
+- Icône dédiée explicitement dimensionnée en `128x128` pour le Chrome Web Store.
 
 ## Installation locale
 
