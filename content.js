@@ -22,15 +22,7 @@
             }
         } catch (e) {}
 
-        const response = await originalFetch.apply(this, args);
-
-        // Capture du token dans les headers de réponse
-        try {
-            const respToken = response.headers.get('x-token');
-            if (respToken) saveToken(respToken);
-        } catch (e) {}
-
-        return response;
+        return await originalFetch.apply(this, args);
     };
 
     // Interception XMLHttpRequest (Angular/Axios selon les versions)
@@ -44,12 +36,6 @@
 
     const originalXHROpen = XMLHttpRequest.prototype.open;
     XMLHttpRequest.prototype.open = function () {
-        this.addEventListener('load', () => {
-            try {
-                const respToken = this.getResponseHeader('x-token');
-                if (respToken) saveToken(respToken);
-            } catch (e) {}
-        });
         return originalXHROpen.apply(this, arguments);
     };
 
@@ -98,15 +84,16 @@
         }
     }
 
-    async function apiRequest(endpoint) {
+    async function apiRequest(endpoint, query = {}, payload = {}) {
         const token = getToken();
         if (!token) {
             throw new Error("Jeton toujours introuvable. Naviguez brièvement dans le menu ou appuyez sur F5.");
         }
 
-        const url = `https://api.ecoledirecte.com/v3/${endpoint}?verbe=get`;
+        const queryParams = new URLSearchParams({ verbe: 'get', ...query });
+        const url = `https://api.ecoledirecte.com/v3/${endpoint}?${queryParams.toString()}`;
         const bodyData = new URLSearchParams();
-        bodyData.append('data', '{}');
+        bodyData.append('data', JSON.stringify(payload));
 
         const response = await fetch(url, {
             method: 'POST',
@@ -117,12 +104,20 @@
             body: bodyData.toString()
         });
 
-        const refreshedToken = response.headers.get('x-token');
-        if (refreshedToken) {
-            saveToken(refreshedToken);
-        }
-
         return await response.json();
+    }
+
+    function formatApiDate(date) {
+        return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
+    }
+
+    function getWeekRange(events) {
+        const firstEvent = events.find(event => parseScheduleDate(event.start_date));
+        const referenceDate = firstEvent ? parseScheduleDate(firstEvent.start_date) : new Date();
+        const weekStart = startOfWeek(referenceDate);
+        const weekEnd = new Date(weekStart);
+        weekEnd.setDate(weekEnd.getDate() + 4);
+        return { dateDebut: formatApiDate(weekStart), dateFin: formatApiDate(weekEnd) };
     }
 
     function formatDateFrench(dateStr) {
@@ -135,6 +130,237 @@
             month: 'long',
             year: 'numeric'
         });
+    }
+
+    function escapeHtml(value) {
+        return String(value ?? '')
+            .replace(/&/g, '&amp;')
+            .replace(/</g, '&lt;')
+            .replace(/>/g, '&gt;')
+            .replace(/"/g, '&quot;')
+            .replace(/'/g, '&#039;');
+    }
+
+    function parseScheduleDate(value) {
+        const rawValue = String(value || '').trim();
+        const match = rawValue.match(/^(\d{4})-(\d{2})-(\d{2})[\sT](\d{2}):(\d{2})(?::(\d{2}))?/);
+        if (match) {
+            return new Date(
+                Number(match[1]),
+                Number(match[2]) - 1,
+                Number(match[3]),
+                Number(match[4]),
+                Number(match[5]),
+                Number(match[6] || 0)
+            );
+        }
+
+        const fallbackDate = new Date(rawValue);
+        return Number.isNaN(fallbackDate.getTime()) ? null : fallbackDate;
+    }
+
+    function formatScheduleTime(value) {
+        const date = parseScheduleDate(value);
+        return date ? date.toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' }) : '';
+    }
+
+    function formatScheduleDay(date) {
+        return date.toLocaleDateString('fr-FR', { weekday: 'long', day: 'numeric', month: 'long' });
+    }
+
+    function startOfWeek(date) {
+        const monday = new Date(date);
+        const day = monday.getDay() || 7;
+        monday.setDate(monday.getDate() - day + 1);
+        monday.setHours(0, 0, 0, 0);
+        return monday;
+    }
+
+    function dateKey(date) {
+        return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
+    }
+
+    function scheduleDateKey(value) {
+        const rawValue = String(value || '').trim();
+        const key = rawValue.slice(0, 10);
+        return /^\d{4}-\d{2}-\d{2}$/.test(key) ? key : '';
+    }
+
+    async function collectSchedule(btn) {
+        const eleveId = getEleveId();
+        if (!eleveId) {
+            alert("Identifiant élève introuvable.");
+            return;
+        }
+
+        const setButtonLabel = (label) => {
+            const labelElement = btn.querySelector('.ed-print-label');
+            if (labelElement) labelElement.textContent = label;
+        };
+
+        btn.disabled = true;
+        setButtonLabel('Récupération de l’emploi du temps...');
+
+        try {
+            const scheduleEndpoint = `E/${eleveId}/emploidutemps.awp`;
+            const scheduleQuery = { v: '4.101.4' };
+            const scheduleRes = await apiRequest(scheduleEndpoint, scheduleQuery);
+            if (!scheduleRes || scheduleRes.code !== 200 || !Array.isArray(scheduleRes.data)) {
+                throw new Error(scheduleRes?.message || "Erreur de réponse de l'API.");
+            }
+
+            if (scheduleRes.data.length === 0) {
+                alert("Aucun cours trouvé dans l’emploi du temps.");
+                return;
+            }
+
+            let events = scheduleRes.data;
+            const receivedDays = new Set(events.map(event => scheduleDateKey(event.start_date)).filter(Boolean));
+            if (receivedDays.size < 2) {
+                setButtonLabel('Récupération de la semaine...');
+                const weekRange = getWeekRange(events);
+                const weekRes = await apiRequest(scheduleEndpoint, {
+                    ...scheduleQuery,
+                    ...weekRange
+                }, weekRange);
+                if (weekRes && weekRes.code === 200 && Array.isArray(weekRes.data)) {
+                    const uniqueEvents = new Map();
+                    [...events, ...weekRes.data].forEach(event => {
+                        const key = `${event.id || ''}-${event.start_date || ''}-${event.end_date || ''}`;
+                        uniqueEvents.set(key, event);
+                    });
+                    events = [...uniqueEvents.values()];
+                }
+            }
+
+            setButtonLabel('Préparation du document...');
+            openSchedulePrintWindow(events);
+        } catch (err) {
+            console.error(err);
+            alert(`Erreur : ${err.message}`);
+        } finally {
+            btn.disabled = false;
+            setButtonLabel('Imprimer l’emploi du temps');
+        }
+    }
+
+    function buildScheduleWeeks(events) {
+        const validEvents = events
+            .map(event => ({
+                ...event,
+                parsedStart: parseScheduleDate(event.start_date),
+                scheduleDateKey: scheduleDateKey(event.start_date)
+            }))
+            .filter(event => event.parsedStart && event.scheduleDateKey)
+            .sort((a, b) => a.parsedStart - b.parsedStart);
+        const weeks = new Map();
+
+        validEvents.forEach(event => {
+            const weekStart = startOfWeek(event.parsedStart);
+            const key = dateKey(weekStart);
+            if (!weeks.has(key)) weeks.set(key, { start: weekStart, events: [] });
+            weeks.get(key).events.push(event);
+        });
+
+        return [...weeks.values()];
+    }
+
+    function renderScheduleWeek(week) {
+        const columns = Array.from({ length: 5 }, (_, index) => {
+            const day = new Date(week.start);
+            day.setDate(day.getDate() + index);
+            const key = dateKey(day);
+            const dayEvents = week.events.filter(event => event.scheduleDateKey === key);
+            const cards = dayEvents.map(event => {
+                const color = /^#[0-9a-f]{6}$/i.test(event.color) ? event.color : '#d9e8f3';
+                const endTime = formatScheduleTime(event.end_date);
+                const cancelled = event.isAnnule ? '<span class="schedule-cancelled">Annulé</span>' : '';
+                const room = event.salle?.trim() || 'Salle non indiquée';
+                const teacher = event.prof?.trim();
+                const group = event.groupe?.trim();
+                return `
+                    <article class="schedule-event${event.isAnnule ? ' is-cancelled' : ''}" style="--event-color: ${color}">
+                        <div class="schedule-time">${formatScheduleTime(event.start_date)}${endTime ? ` - ${endTime}` : ''}</div>
+                        <h3>${escapeHtml(event.matiere || event.text || 'Cours')}</h3>
+                        ${cancelled}
+                        <div class="schedule-detail">${escapeHtml(room)}</div>
+                        ${teacher ? `<div class="schedule-detail">${escapeHtml(teacher)}</div>` : ''}
+                        ${group ? `<div class="schedule-group">${escapeHtml(group)}</div>` : ''}
+                    </article>
+                `;
+            }).join('');
+
+            return `
+                <section class="schedule-day">
+                    <header><strong>${day.toLocaleDateString('fr-FR', { weekday: 'short' }).replace('.', '')}</strong><span>${day.toLocaleDateString('fr-FR', { day: 'numeric', month: 'short' })}</span></header>
+                    <div class="schedule-events">${cards || '<div class="schedule-empty">Aucun cours</div>'}</div>
+                </section>
+            `;
+        }).join('');
+
+        return `
+            <section class="schedule-week">
+                <h2>Semaine du ${formatScheduleDay(week.start)}</h2>
+                <div class="schedule-grid">${columns}</div>
+            </section>
+        `;
+    }
+
+    function openSchedulePrintWindow(events) {
+        const printWindow = window.open('', '_blank');
+        if (!printWindow) {
+            alert("Autorise les fenêtres pop-up sur ce site pour lancer l'impression.");
+            return;
+        }
+
+        const weeks = buildScheduleWeeks(events);
+        const weeksHtml = weeks.map(renderScheduleWeek).join('');
+        const receivedDays = new Set(events.map(event => scheduleDateKey(event.start_date)).filter(Boolean)).size;
+        const htmlDocument = `
+            <!DOCTYPE html>
+            <html lang="fr">
+            <head>
+                <meta charset="UTF-8">
+                <title>Emploi du temps - ÉcoleDirecte</title>
+                <style>
+                    @page { size: A4 landscape; margin: 9mm; }
+                    :root { color-scheme: light; }
+                    * { box-sizing: border-box; }
+                    body { margin: 0; color: #183248; font-family: "Segoe UI", Arial, sans-serif; background: #fff; }
+                    .print-header { display: flex; justify-content: space-between; align-items: end; margin-bottom: 5mm; border-bottom: 2px solid #0b4e84; padding-bottom: 3mm; }
+                    h1 { margin: 0; color: #0b4e84; font-size: 22px; }
+                    .print-subtitle { color: #668096; font-size: 11px; }
+                    .schedule-week { page-break-after: always; }
+                    .schedule-week:last-child { page-break-after: auto; }
+                    .schedule-week > h2 { margin: 0 0 3mm; color: #0b4e84; font-size: 15px; text-transform: capitalize; }
+                    .schedule-grid { display: flex; align-items: stretch; width: 100%; border: 1px solid #b8cbd8; min-height: 164mm; }
+                    .schedule-day { flex: 1 1 0; min-width: 0; width: 20%; border-right: 1px solid #b8cbd8; page-break-inside: avoid; break-inside: avoid; }
+                    .schedule-day:last-child { border-right: 0; }
+                    .schedule-day > header { display: flex; justify-content: space-between; align-items: baseline; gap: 4px; padding: 7px 6px; background: #e8f1f6; border-bottom: 1px solid #b8cbd8; color: #0b4e84; text-transform: capitalize; font-size: 11px; }
+                    .schedule-day > header span { color: #668096; font-size: 10px; }
+                    .schedule-events { padding: 5px; }
+                    .schedule-event { margin-bottom: 5px; padding: 6px; border-left: 4px solid var(--event-color); border-radius: 3px; background: color-mix(in srgb, var(--event-color) 24%, white); break-inside: avoid; font-size: 9px; }
+                    .schedule-event h3 { margin: 2px 0 4px; color: #173c56; font-size: 10px; line-height: 1.15; }
+                    .schedule-time { color: #0b4e84; font-size: 9px; font-weight: 700; }
+                    .schedule-detail { overflow: hidden; color: #536b7c; text-overflow: ellipsis; white-space: nowrap; }
+                    .schedule-group { display: inline-block; margin-top: 4px; padding: 2px 4px; border-radius: 3px; background: rgba(11, 78, 132, .12); color: #0b4e84; font-size: 8px; }
+                    .schedule-cancelled { color: #a52c2c; font-size: 8px; font-weight: 700; text-transform: uppercase; }
+                    .is-cancelled { opacity: .62; text-decoration: line-through; }
+                    .schedule-empty { padding: 15px 4px; color: #9aabb6; font-size: 9px; text-align: center; }
+                    @media print { .schedule-event { background: color-mix(in srgb, var(--event-color) 24%, white) !important; -webkit-print-color-adjust: exact; print-color-adjust: exact; } }
+                </style>
+            </head>
+            <body>
+                <header class="print-header"><h1>Emploi du temps</h1><div class="print-subtitle">ÉcoleDirecte · ${events.length} cours · ${receivedDays} jours · ${new Date().toLocaleDateString('fr-FR')}</div></header>
+                ${weeksHtml}
+                <script>window.onload = function() { window.focus(); window.print(); };</script>
+            </body>
+            </html>
+        `;
+
+        printWindow.document.open();
+        printWindow.document.write(htmlDocument);
+        printWindow.document.close();
     }
 
     async function collectFutureHomework(btn) {
@@ -284,14 +510,16 @@
         printWindow.document.close();
     }
 
-    function injectButton() {
-        if (document.getElementById('ed-custom-print-btn')) return;
+    function injectButton(type) {
+        if (!document.body || !document.head || document.getElementById('ed-custom-print-btn')) return;
 
+        const isSchedule = type === 'schedule';
         const btn = document.createElement('button');
         btn.id = 'ed-custom-print-btn';
+        btn.dataset.edPrintType = type;
         btn.type = 'button';
-        btn.setAttribute('aria-label', 'Imprimer les devoirs à venir');
-        btn.title = 'Imprimer les devoirs à venir';
+        btn.setAttribute('aria-label', isSchedule ? 'Imprimer l’emploi du temps' : 'Imprimer les devoirs à venir');
+        btn.title = isSchedule ? 'Imprimer l’emploi du temps en A4 paysage' : 'Imprimer les devoirs à venir';
         btn.innerHTML = `
             <span class="ed-print-icon" aria-hidden="true">
                 <svg viewBox="0 0 24 24" focusable="false">
@@ -299,7 +527,7 @@
                     <path d="M7 14h10v7H7zM18 12h.01"/>
                 </svg>
             </span>
-            <span class="ed-print-label">Imprimer les devoirs</span>
+            <span class="ed-print-label">${isSchedule ? 'Imprimer l’emploi du temps' : 'Imprimer les devoirs'}</span>
         `;
         btn.style.position = 'fixed';
         btn.style.bottom = '24px';
@@ -334,18 +562,26 @@
         `;
         document.head.appendChild(style);
 
-        btn.addEventListener('click', () => collectFutureHomework(btn));
+        btn.addEventListener('click', () => isSchedule ? collectSchedule(btn) : collectFutureHomework(btn));
 
         document.body.appendChild(btn);
     }
 
     function checkUrlAndInject() {
+        if (!document.body) return;
+
         const urlLower = window.location.href.toLowerCase();
-        if (urlLower.includes('cahierdetexte') || urlLower.includes('cahier-de-texte') || urlLower.includes('travail-a-faire')) {
-            injectButton();
+        const isSchedule = urlLower.includes('emploidutemps') || urlLower.includes('emploi-du-temps');
+        const isHomework = urlLower.includes('cahierdetexte') || urlLower.includes('cahier-de-texte') || urlLower.includes('travail-a-faire');
+        const button = document.getElementById('ed-custom-print-btn');
+        if (isSchedule) {
+            if (button && button.dataset.edPrintType !== 'schedule') button.remove();
+            injectButton('schedule');
+        } else if (isHomework) {
+            if (button && button.dataset.edPrintType !== 'homework') button.remove();
+            injectButton('homework');
         } else {
-            const existingBtn = document.getElementById('ed-custom-print-btn');
-            if (existingBtn) existingBtn.remove();
+            if (button) button.remove();
         }
     }
 
@@ -355,6 +591,7 @@
     } else {
         document.addEventListener('DOMContentLoaded', () => {
             observer.observe(document.body, { childList: true, subtree: true });
+            checkUrlAndInject();
         });
     }
 
