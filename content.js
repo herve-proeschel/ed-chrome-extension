@@ -2,6 +2,20 @@
     'use strict';
 
     let currentToken = '';
+    let displayedScheduleData = [];
+
+    function captureDisplayedSchedule(url, responseData) {
+        if (!String(url || '').toLowerCase().includes('emploidutemps.awp')) return;
+        const events = responseData && Array.isArray(responseData.data) ? responseData.data : null;
+        if (!events || events.length === 0) return;
+
+        const mergedEvents = new Map();
+        [...displayedScheduleData, ...events].forEach(event => {
+            const key = `${event.id || ''}-${event.start_date || ''}-${event.end_date || ''}`;
+            mergedEvents.set(key, event);
+        });
+        displayedScheduleData = [...mergedEvents.values()];
+    }
 
     function saveToken(token) {
         if (token && typeof token === 'string' && token.length > 20) {
@@ -22,7 +36,12 @@
             }
         } catch (e) {}
 
-        return await originalFetch.apply(this, args);
+        const response = await originalFetch.apply(this, args);
+        try {
+            const requestUrl = typeof args[0] === 'string' ? args[0] : args[0]?.url;
+            response.clone().json().then(data => captureDisplayedSchedule(requestUrl, data)).catch(() => {});
+        } catch (e) {}
+        return response;
     };
 
     // Interception XMLHttpRequest (Angular/Axios selon les versions)
@@ -36,6 +55,13 @@
 
     const originalXHROpen = XMLHttpRequest.prototype.open;
     XMLHttpRequest.prototype.open = function () {
+        this._edRequestUrl = arguments[1];
+        this.addEventListener('load', () => {
+            try {
+                const responseData = this.responseType === 'json' ? this.response : JSON.parse(this.responseText);
+                captureDisplayedSchedule(this.responseURL || this._edRequestUrl, responseData);
+            } catch (e) {}
+        });
         return originalXHROpen.apply(this, arguments);
     };
 
@@ -105,19 +131,6 @@
         });
 
         return await response.json();
-    }
-
-    function formatApiDate(date) {
-        return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
-    }
-
-    function getWeekRange(events) {
-        const firstEvent = events.find(event => parseScheduleDate(event.start_date));
-        const referenceDate = firstEvent ? parseScheduleDate(firstEvent.start_date) : new Date();
-        const weekStart = startOfWeek(referenceDate);
-        const weekEnd = new Date(weekStart);
-        weekEnd.setDate(weekEnd.getDate() + 4);
-        return { dateDebut: formatApiDate(weekStart), dateFin: formatApiDate(weekEnd) };
     }
 
     function formatDateFrench(dateStr) {
@@ -233,27 +246,11 @@
                 return;
             }
 
-            let events = scheduleRes.data;
-            const receivedDays = new Set(events.map(event => scheduleDateKey(event.start_date)).filter(Boolean));
-            if (receivedDays.size < 2) {
-                setButtonLabel('Récupération de la semaine...');
-                const weekRange = getWeekRange(events);
-                const weekRes = await apiRequest(scheduleEndpoint, {
-                    ...scheduleQuery,
-                    ...weekRange
-                }, weekRange);
-                if (weekRes && weekRes.code === 200 && Array.isArray(weekRes.data)) {
-                    const uniqueEvents = new Map();
-                    [...events, ...weekRes.data].forEach(event => {
-                        const key = `${event.id || ''}-${event.start_date || ''}-${event.end_date || ''}`;
-                        uniqueEvents.set(key, event);
-                    });
-                    events = [...uniqueEvents.values()];
-                }
-            }
-
+            const displayedEvents = displayedScheduleData.length > scheduleRes.data.length
+                ? displayedScheduleData
+                : scheduleRes.data;
             setButtonLabel('Préparation du document...');
-            openSchedulePrintWindow(events);
+            openSchedulePrintWindow(displayedEvents);
         } catch (err) {
             console.error(err);
             alert(`Erreur : ${err.message}`);
@@ -293,15 +290,51 @@
                 .filter(event => event.scheduleDateKey === key)
                 .map(event => ({ event, position: getSchedulePosition(event) }))
                 .filter(item => item.position);
-            const cards = dayEvents.map(({ event, position }) => {
+            const overlapGroups = [];
+            dayEvents.forEach(item => {
+                const start = item.event.parsedStart || parseScheduleDate(item.event.start_date);
+                const end = parseScheduleDate(item.event.end_date) || start;
+                const matchingGroups = overlapGroups.filter(group => start < group.end);
+                if (matchingGroups.length === 0) {
+                    overlapGroups.push({ start, end, items: [item] });
+                    return;
+                }
+
+                const group = matchingGroups[0];
+                group.end = new Date(Math.max(group.end.getTime(), end.getTime()));
+                group.items.push(item);
+                matchingGroups.slice(1).forEach(otherGroup => {
+                    group.end = new Date(Math.max(group.end.getTime(), otherGroup.end.getTime()));
+                    group.items.push(...otherGroup.items);
+                    overlapGroups.splice(overlapGroups.indexOf(otherGroup), 1);
+                });
+            });
+
+            const positionedEvents = overlapGroups.flatMap(group => {
+                const laneEndTimes = [];
+                const groupItems = [...group.items].sort((a, b) => a.event.parsedStart - b.event.parsedStart);
+                const positioned = groupItems.map(item => {
+                    const start = item.event.parsedStart || parseScheduleDate(item.event.start_date);
+                    const end = parseScheduleDate(item.event.end_date) || start;
+                    let lane = laneEndTimes.findIndex(laneEnd => laneEnd <= start);
+                    if (lane === -1) lane = laneEndTimes.length;
+                    laneEndTimes[lane] = end;
+                    return { ...item, lane };
+                });
+                const laneCount = Math.max(1, laneEndTimes.length);
+                return positioned.map(item => ({ ...item, laneCount }));
+            });
+            const cards = positionedEvents.map(({ event, position, lane, laneCount }) => {
                 const color = /^#[0-9a-f]{6}$/i.test(event.color) ? event.color : '#d9e8f3';
                 const endTime = formatScheduleTime(event.end_date);
                 const cancelled = event.isAnnule ? '<span class="schedule-cancelled">Annulé</span>' : '';
                 const room = event.salle?.trim() || 'Salle non indiquée';
                 const teacher = event.prof?.trim();
                 const group = event.groupe?.trim();
+                const left = (lane * 100) / laneCount;
+                const right = ((laneCount - lane - 1) * 100) / laneCount;
                 return `
-                    <article class="schedule-event${event.isAnnule ? ' is-cancelled' : ''}" style="--event-color: ${color}; top: ${position.top}%; height: ${position.height}%">
+                    <article class="schedule-event${event.isAnnule ? ' is-cancelled' : ''}" style="--event-color: ${color}; top: ${position.top}%; height: ${position.height}%; left: calc(${left}% + 22px); right: calc(${right}% + 5px)">
                         <div class="schedule-time">${formatScheduleTime(event.start_date)}${endTime ? ` - ${endTime}` : ''}</div>
                         <h3>${escapeHtml(event.matiere || event.text || 'Cours')}</h3>
                         ${cancelled}
@@ -371,7 +404,22 @@
                     .schedule-cancelled { color: #a52c2c; font-size: 8px; font-weight: 700; text-transform: uppercase; }
                     .is-cancelled { opacity: .62; text-decoration: line-through; }
                     .schedule-empty { padding: 15px 4px; color: #9aabb6; font-size: 9px; text-align: center; }
-                    @media print { .schedule-event { background: color-mix(in srgb, var(--event-color) 24%, white) !important; -webkit-print-color-adjust: exact; print-color-adjust: exact; } }
+                    @media print {
+                        body { color: #000; }
+                        .print-header { border-bottom-color: #000; }
+                        h1, .schedule-week > h2, .schedule-time { color: #000 !important; }
+                        .schedule-grid { border-color: #000; }
+                        .schedule-day { border-right-color: #000; }
+                        .schedule-day > header { background: #e8f1f6 !important; border-bottom-color: #000; color: #000; }
+                        .schedule-day > header span, .schedule-detail { color: #000; }
+                        .schedule-events { background: repeating-linear-gradient(to bottom, transparent 0, transparent calc(10% - 1px), #999 calc(10% - 1px), #999 10%); }
+                        .schedule-events::before { color: #000; font-weight: 700; }
+                        .schedule-event { background: color-mix(in srgb, var(--event-color) 32%, white) !important; border: 1px solid #000; border-left: 5px solid var(--event-color); color: #000; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+                        .schedule-event h3, .schedule-group { color: #000; }
+                        .schedule-group { border: 1px solid #000; background: rgba(255, 255, 255, .65); }
+                        .schedule-cancelled { color: #000; font-weight: 800; }
+                        .schedule-empty { color: #000; }
+                    }
                 </style>
             </head>
             <body>

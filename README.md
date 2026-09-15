@@ -28,7 +28,7 @@ Ouvrir l'une des pages suivantes lorsque la session ÉcoleDirecte est active :
 - le cahier de texte ou la page des travaux à faire pour imprimer les devoirs à venir ;
 - `/E/<identifiant>/EmploiDuTemps` pour imprimer l'emploi du temps de la semaine.
 
-Le bouton flottant apparaît automatiquement. L'impression de l'emploi du temps récupère les créneaux de la semaine, du lundi au vendredi, puis les place sur une échelle de 08:00 à 18:00. Les espaces libres entre deux cours sont conservés.
+Le bouton flottant apparaît automatiquement. L'impression reprend les créneaux de l'emploi du temps actuellement affiché, du lundi au vendredi, puis les place sur une échelle de 08:00 à 18:00. Les espaces libres entre deux cours sont conservés.
 
 ## Dépannage
 
