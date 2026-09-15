@@ -144,8 +144,13 @@
             return;
         }
 
+        const setButtonLabel = (label) => {
+            const labelElement = btn.querySelector('.ed-print-label');
+            if (labelElement) labelElement.textContent = label;
+        };
+
         btn.disabled = true;
-        btn.innerText = "⏳ Récupération du planning...";
+        setButtonLabel("Récupération du planning...");
 
         try {
             const listRes = await apiRequest(`Eleves/${eleveId}/cahierdetexte.awp`);
@@ -166,7 +171,7 @@
             const detailedDays = [];
             for (let i = 0; i < futureDates.length; i++) {
                 const date = futureDates[i];
-                btn.innerText = `⏳ Collecte (${i + 1}/${futureDates.length}) : ${date}...`;
+                setButtonLabel(`Collecte (${i + 1}/${futureDates.length}) : ${date}...`);
 
                 const dayDetail = await apiRequest(`Eleves/${eleveId}/cahierdetexte/${date}.awp`);
                 if (dayDetail && dayDetail.code === 200 && dayDetail.data) {
@@ -174,7 +179,7 @@
                 }
             }
 
-            btn.innerText = "📄 Préparation du document...";
+            setButtonLabel("Préparation du document...");
             openPrintWindow(detailedDays);
 
         } catch (err) {
@@ -182,7 +187,7 @@
             alert(`Erreur : ${err.message}`);
         } finally {
             btn.disabled = false;
-            btn.innerText = "🖨️ Imprimer devoirs à venir";
+            setButtonLabel("Imprimer les devoirs");
         }
     }
 
@@ -284,23 +289,51 @@
 
         const btn = document.createElement('button');
         btn.id = 'ed-custom-print-btn';
-        btn.innerText = '🖨️ Imprimer devoirs à venir';
+        btn.type = 'button';
+        btn.setAttribute('aria-label', 'Imprimer les devoirs à venir');
+        btn.title = 'Imprimer les devoirs à venir';
+        btn.innerHTML = `
+            <span class="ed-print-icon" aria-hidden="true">
+                <svg viewBox="0 0 24 24" focusable="false">
+                    <path d="M7 8V3h10v5M7 17H5a2 2 0 0 1-2-2v-4a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2v4a2 2 0 0 1-2 2h-2"/>
+                    <path d="M7 14h10v7H7zM18 12h.01"/>
+                </svg>
+            </span>
+            <span class="ed-print-label">Imprimer les devoirs</span>
+        `;
         btn.style.position = 'fixed';
-        btn.style.bottom = '25px';
-        btn.style.right = '25px';
+        btn.style.bottom = '24px';
+        btn.style.right = '24px';
         btn.style.zIndex = '2147483647';
-        btn.style.padding = '12px 20px';
-        btn.style.backgroundColor = '#0b4e84';
+        btn.style.display = 'inline-flex';
+        btn.style.alignItems = 'center';
+        btn.style.gap = '10px';
+        btn.style.padding = '13px 18px';
+        btn.style.background = 'linear-gradient(135deg, #0b4e84, #176da8)';
         btn.style.color = '#ffffff';
-        btn.style.border = '2px solid #ffffff';
-        btn.style.borderRadius = '50px';
-        btn.style.boxShadow = '0 4px 14px rgba(0,0,0,0.4)';
+        btn.style.border = '1px solid rgba(255,255,255,0.72)';
+        btn.style.borderRadius = '12px';
+        btn.style.boxShadow = '0 10px 24px rgba(5, 35, 61, 0.28), 0 2px 5px rgba(0,0,0,0.18)';
         btn.style.cursor = 'pointer';
-        btn.style.fontWeight = 'bold';
-        btn.style.fontSize = '14px';
+        btn.style.font = '600 14px/1.2 system-ui, -apple-system, sans-serif';
+        btn.style.letterSpacing = '0.01em';
+        btn.style.transition = 'transform 160ms ease, box-shadow 160ms ease, filter 160ms ease';
 
-        btn.addEventListener('mouseenter', () => btn.style.backgroundColor = '#083961');
-        btn.addEventListener('mouseleave', () => btn.style.backgroundColor = '#0b4e84');
+        const style = document.createElement('style');
+        style.textContent = `
+            #ed-custom-print-btn .ed-print-icon { display: inline-flex; width: 20px; height: 20px; }
+            #ed-custom-print-btn svg { width: 20px; height: 20px; fill: none; stroke: currentColor; stroke-linecap: round; stroke-linejoin: round; stroke-width: 1.8; }
+            #ed-custom-print-btn:hover { filter: brightness(1.08); transform: translateY(-2px); box-shadow: 0 14px 28px rgba(5, 35, 61, 0.32), 0 3px 7px rgba(0,0,0,0.18); }
+            #ed-custom-print-btn:focus-visible { outline: 3px solid #f4c542; outline-offset: 3px; }
+            #ed-custom-print-btn:active { transform: translateY(0); }
+            #ed-custom-print-btn:disabled { cursor: wait; filter: saturate(.65); opacity: .9; transform: none; }
+            @media (max-width: 520px) {
+                #ed-custom-print-btn { bottom: 14px !important; right: 14px !important; padding: 12px 14px !important; }
+                #ed-custom-print-btn .ed-print-label { display: none; }
+            }
+        `;
+        document.head.appendChild(style);
+
         btn.addEventListener('click', () => collectFutureHomework(btn));
 
         document.body.appendChild(btn);
