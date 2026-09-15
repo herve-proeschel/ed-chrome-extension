@@ -1,0 +1,14 @@
+{
+  "manifest_version": 3,
+  "name": "ÉcoleDirecte - Impression Cahier de Texte",
+  "version": "1.2",
+  "description": "Ajoute un bouton pour imprimer les devoirs détaillés à venir sur ÉcoleDirecte",
+  "content_scripts": [
+    {
+      "matches": ["https://www.ecoledirecte.com/*"],
+      "js": ["content.js"],
+      "run_at": "document_start",
+      "world": "MAIN"
+    }
+  ]
+}
