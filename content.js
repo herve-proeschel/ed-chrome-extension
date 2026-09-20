@@ -2,6 +2,7 @@
     'use strict';
 
     let currentToken = '';
+    let currentApiVersion = '';
     let displayedScheduleData = [];
 
     function captureDisplayedSchedule(url, responseData) {
@@ -24,11 +25,41 @@
         }
     }
 
+    function captureApiVersion(url) {
+        if (!url) return;
+        try {
+            const parsedUrl = new URL(url, window.location.href);
+            const isBackendRequest = parsedUrl.hostname.toLowerCase() === 'api.ecoledirecte.com'
+                && parsedUrl.pathname.toLowerCase().includes('/v3/');
+            if (!isBackendRequest) return;
+            const version = parsedUrl.searchParams.get('v');
+            if (version) {
+                currentApiVersion = version;
+                sessionStorage.setItem('ed_api_version', version);
+            }
+        } catch (e) {}
+    }
+
+    function observeBackendRequests() {
+        const captureEntry = entry => captureApiVersion(entry && entry.name);
+        try {
+            performance.getEntriesByType('resource').forEach(captureEntry);
+        } catch (e) {}
+        try {
+            const observer = new PerformanceObserver(list => {
+                list.getEntries().forEach(captureEntry);
+            });
+            observer.observe({ type: 'resource', buffered: true });
+        } catch (e) {}
+    }
+
     // Interception Fetch
     const originalFetch = window.fetch;
     window.fetch = async function (...args) {
         // Capture du token dans les headers envoyés
         try {
+            const requestUrl = typeof args[0] === 'string' ? args[0] : args[0]?.url;
+            captureApiVersion(requestUrl);
             if (args[1] && args[1].headers) {
                 const h = args[1].headers;
                 const reqToken = h['X-Token'] || (h.get && h.get('X-Token'));
@@ -56,6 +87,7 @@
     const originalXHROpen = XMLHttpRequest.prototype.open;
     XMLHttpRequest.prototype.open = function () {
         this._edRequestUrl = arguments[1];
+        captureApiVersion(this._edRequestUrl);
         this.addEventListener('load', () => {
             try {
                 const responseData = this.responseType === 'json' ? this.response : JSON.parse(this.responseText);
@@ -64,6 +96,8 @@
         });
         return originalXHROpen.apply(this, arguments);
     };
+
+    observeBackendRequests();
 
     function getToken() {
         if (currentToken) return currentToken;
@@ -77,6 +111,10 @@
             if (val) return val.replace(/^"|"$/g, '');
         }
         return '';
+    }
+
+    function getApiVersion() {
+        return currentApiVersion || sessionStorage.getItem('ed_api_version') || '4.101.4';
     }
 
     function getEleveId() {
@@ -235,8 +273,16 @@
 
         try {
             const scheduleEndpoint = `E/${eleveId}/emploidutemps.awp`;
-            const scheduleQuery = { v: '4.101.4' };
-            const scheduleRes = await apiRequest(scheduleEndpoint, scheduleQuery);
+            const scheduleQuery = { v: getApiVersion() };
+            const weekStart = startOfWeek(new Date());
+            const weekEnd = new Date(weekStart);
+            weekEnd.setDate(weekEnd.getDate() + 6);
+            const schedulePayload = {
+                dateDebut: dateKey(weekStart),
+                dateFin: dateKey(weekEnd),
+                avecTrous: false
+            };
+            const scheduleRes = await apiRequest(scheduleEndpoint, scheduleQuery, schedulePayload);
             if (!scheduleRes || scheduleRes.code !== 200 || !Array.isArray(scheduleRes.data)) {
                 throw new Error(scheduleRes?.message || "Erreur de réponse de l'API.");
             }
