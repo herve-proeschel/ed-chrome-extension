@@ -22,6 +22,16 @@ Extension Chrome Manifest V3 pour imprimer proprement le cahier de texte et l'em
 
 Après chaque modification du code, cliquer sur **Recharger** dans la carte de l'extension, puis actualiser la page ÉcoleDirecte.
 
+## Tests locaux
+
+Les tests utilisent le test runner intégré à Node.js et ne nécessitent aucune dépendance supplémentaire :
+
+```bash
+npm test
+```
+
+Le dossier `tests/` et `package.json` servent uniquement au développement. Ils ne sont pas référencés par le manifeste et ne sont donc pas copiés dans le package Chrome Web Store.
+
 ## Utilisation
 
 Ouvrir l'une des pages suivantes lorsque la session ÉcoleDirecte est active :
