@@ -4,7 +4,10 @@
     const state = {
         currentToken: '',
         currentApiVersion: '',
-        displayedScheduleData: []
+        displayedScheduleData: [],
+        printAssets: new Map(),
+        extensionUrls: new Map(),
+        extensionUrlRequestId: 0
     };
 
     function saveToken(token) {
@@ -107,6 +110,60 @@
         });
     }
 
+    function getExtensionUrl(path) {
+        if (state.extensionUrls.has(path)) return state.extensionUrls.get(path);
+        const requestId = `ed-print-${++state.extensionUrlRequestId}`;
+        const request = new Promise((resolve, reject) => {
+            const timeout = window.setTimeout(() => {
+                window.removeEventListener('message', onMessage);
+                reject(new Error(`Impossible de charger les ressources d’impression (${path}).`));
+            }, 5000);
+            function onMessage(event) {
+                const response = event.data;
+                if (event.source !== window || !response || response.source !== 'ed-print-bridge'
+                    || response.type !== 'url-response' || response.id !== requestId) return;
+                window.clearTimeout(timeout);
+                window.removeEventListener('message', onMessage);
+                state.extensionUrls.set(path, response.url);
+                resolve(response.url);
+            }
+            window.addEventListener('message', onMessage);
+            window.postMessage({ source: 'ed-print-main', type: 'get-url', id: requestId, path }, '*');
+        });
+        state.extensionUrls.set(path, request);
+        return request;
+    }
+
+    async function loadPrintAsset(path) {
+        if (!state.printAssets.has(path)) {
+            state.printAssets.set(path, getExtensionUrl(path).then(url => fetch(url)).then(response => {
+                if (!response.ok) throw new Error(`Impossible de charger ${path}.`);
+                return response.text();
+            }));
+        }
+        return state.printAssets.get(path);
+    }
+
+    async function openReactPrintWindow(type, data, stylesPath) {
+        const printWindow = window.open('', '_blank');
+        if (!printWindow) return alert("Autorise les fenêtres pop-up sur ce site pour lancer l'impression.");
+        try {
+            const [template, stylesUrl, scriptUrl] = await Promise.all([
+                loadPrintAsset('assets/templates/print.html'),
+                getExtensionUrl(stylesPath),
+                getExtensionUrl('dist/print.js')
+            ]);
+            const serializedData = JSON.stringify({ type, data }).replace(/</g, '\\u003c');
+            printWindow.document.open();
+            printWindow.document.write(template.replace('{{stylesUrl}}', stylesUrl).replace('{{scriptUrl}}', scriptUrl).replace('{{data}}', serializedData));
+            printWindow.document.close();
+        } catch (error) {
+            printWindow.close();
+            console.error('[EDPrint] Échec du chargement de la vue React d’impression.', { type, stylesPath, error });
+            throw error;
+        }
+    }
+
     window.EDPrint = {
         state,
         saveToken,
@@ -118,6 +175,8 @@
         apiRequest,
         decodeBase64Utf8,
         escapeHtml,
-        formatDateFrench
+        formatDateFrench,
+        loadPrintAsset,
+        openReactPrintWindow
     };
 }());

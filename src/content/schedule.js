@@ -60,11 +60,8 @@
         return `<section class="schedule-week"><h2>Semaine du ${week.start.toLocaleDateString('fr-FR', { weekday: 'long', day: 'numeric', month: 'long' })}</h2><div class="schedule-grid">${columns}</div></section>`;
     }
 
-    function openPrintWindow(events) {
-        const printWindow = window.open('', '_blank');
-        if (!printWindow) return alert("Autorise les fenêtres pop-up sur ce site pour lancer l'impression.");
-        const styles = `@page{size:A4 landscape;margin:9mm}*{box-sizing:border-box}body{margin:0;color:#183248;font-family:Segoe UI,Arial,sans-serif}.print-header{display:flex;justify-content:space-between;border-bottom:2px solid #0b4e84;padding-bottom:3mm;margin-bottom:5mm}h1,h2{color:#0b4e84}.schedule-week{page-break-after:always}.schedule-grid{display:flex;border:1px solid #b8cbd8;min-height:164mm}.schedule-day{flex:1;width:20%;border-right:1px solid #b8cbd8}.schedule-day:last-child{border:0}.schedule-day>header{display:flex;justify-content:space-between;padding:7px 6px;background:#e8f1f6;color:#0b4e84}.schedule-events{position:relative;height:150mm;overflow:hidden;background:repeating-linear-gradient(to bottom,transparent 0,transparent calc(10% - 1px),#dce7ed calc(10% - 1px),#dce7ed 10%)}.schedule-event{position:absolute;left:5px;right:5px;overflow:hidden;padding:4px;border-left:4px solid var(--event-color);background:#edf4f8;font-size:8px}.schedule-event h3{margin:2px 0 4px;font-size:10px}.schedule-time{color:#0b4e84;font-weight:700}.schedule-group{margin-top:4px}.schedule-cancelled{color:#a52c2c;font-weight:700}.schedule-empty{text-align:center;padding:15px;color:#9aabb6}`;
-        printWindow.document.open(); printWindow.document.write(`<!doctype html><html lang="fr"><head><meta charset="UTF-8"><title>Emploi du temps - ÉcoleDirecte</title><style>${styles}</style></head><body><header class="print-header"><h1>Emploi du temps</h1><span>${events.length} cours · ${new Date().toLocaleDateString('fr-FR')}</span></header>${buildWeeks(events).map(renderWeek).join('')}<script>window.onload=function(){window.focus();window.print()}<\/script></body></html>`); printWindow.document.close();
+    async function openPrintWindow(events) {
+        await ed.openReactPrintWindow('schedule', events, 'assets/styles/schedule.css');
     }
 
     async function collect(btn) {
@@ -76,7 +73,7 @@
             const response = await ed.apiRequest(`E/${id}/emploidutemps.awp`, { v: ed.getApiVersion() }, { dateDebut: dateKey(weekStart), dateFin: dateKey(weekEnd), avecTrous: false });
             if (!response || response.code !== 200 || !Array.isArray(response.data)) throw new Error(response?.message || "Erreur de réponse de l'API.");
             if (!response.data.length) return alert('Aucun cours trouvé dans l’emploi du temps.');
-            label('Préparation du document...'); openPrintWindow(ed.state.displayedScheduleData.length > response.data.length ? ed.state.displayedScheduleData : response.data);
+            label('Préparation du document...'); await openPrintWindow(ed.state.displayedScheduleData.length > response.data.length ? ed.state.displayedScheduleData : response.data);
         } catch (error) { console.error(error); alert(`Erreur : ${error.message}`); } finally { btn.disabled = false; label('Imprimer l’emploi du temps'); }
     }
 

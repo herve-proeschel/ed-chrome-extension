@@ -18,12 +18,23 @@
     }
   },
   "background": {
-    "service_worker": "background.js"
+    "service_worker": "src/background/background.js"
   },
+  "web_accessible_resources": [
+    {
+      "resources": ["assets/templates/*.html", "assets/styles/*.css", "dist/print.js"],
+      "matches": ["https://www.ecoledirecte.com/*"]
+    }
+  ],
   "content_scripts": [
     {
       "matches": ["https://www.ecoledirecte.com/*"],
-      "js": ["runtime.js", "interception.js", "schedule.js", "homework.js", "content.js"],
+      "js": ["src/content/asset-bridge.js"],
+      "run_at": "document_start"
+    },
+    {
+      "matches": ["https://www.ecoledirecte.com/*"],
+      "js": ["src/content/runtime.js", "src/content/interception.js", "src/content/schedule.js", "src/content/homework.js", "src/content/content.js"],
       "run_at": "document_start",
       "world": "MAIN"
     }

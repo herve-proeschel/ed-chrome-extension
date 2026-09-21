@@ -25,7 +25,7 @@ function loadRuntime() {
         atob: value => Buffer.from(value, 'base64').toString('binary')
     };
     vm.createContext(context);
-    vm.runInContext(fs.readFileSync(path.join(__dirname, '..', 'runtime.js'), 'utf8'), context);
+    vm.runInContext(fs.readFileSync(path.join(__dirname, '..', 'src', 'content', 'runtime.js'), 'utf8'), context);
     return { ed: context.window.EDPrint, sessionStorage, localStorage };
 }
 
@@ -52,12 +52,20 @@ test('runtime extracts student id and escapes HTML', () => {
 test('manifest scripts exist and tests are not listed for deployment', () => {
     const root = path.join(__dirname, '..');
     const manifest = JSON.parse(fs.readFileSync(path.join(root, 'manifest.json'), 'utf8'));
+    assert.equal(manifest.background.service_worker, 'src/background/background.js');
+    assert.ok(fs.existsSync(path.join(root, manifest.background.service_worker)));
+    const assets = manifest.web_accessible_resources.flatMap(resource => resource.resources);
+    assert.deepEqual(assets, ['assets/templates/*.html', 'assets/styles/*.css', 'dist/print.js']);
+    for (const file of ['assets/templates/print.html', 'assets/styles/homework.css', 'assets/styles/schedule.css', 'dist/print.js']) {
+        assert.ok(fs.existsSync(path.join(root, file)));
+    }
     const scripts = manifest.content_scripts.flatMap(contentScript => contentScript.js);
-    assert.ok(scripts.includes('runtime.js'));
-    assert.ok(scripts.includes('interception.js'));
-    assert.ok(scripts.includes('schedule.js'));
-    assert.ok(scripts.includes('homework.js'));
-    assert.ok(scripts.includes('content.js'));
+    assert.ok(scripts.includes('src/content/runtime.js'));
+    assert.ok(scripts.includes('src/content/interception.js'));
+    assert.ok(scripts.includes('src/content/schedule.js'));
+    assert.ok(scripts.includes('src/content/homework.js'));
+    assert.ok(scripts.includes('src/content/content.js'));
+    assert.ok(scripts.includes('src/content/asset-bridge.js'));
     assert.ok(scripts.every(file => fs.existsSync(path.join(root, file))));
     assert.ok(scripts.every(file => !file.startsWith('tests/')));
 });

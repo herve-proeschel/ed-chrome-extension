@@ -28,14 +28,19 @@ jobs:
       - name: Validate manifest and scripts
         shell: bash
         run: |
-          node -e "const fs=require('fs'); const cp=require('child_process'); const manifest=JSON.parse(fs.readFileSync('manifest.json','utf8')); if (manifest.manifest_version !== 3) throw new Error('Manifest V3 requis'); if (!/^\\d+\\.\\d+\\.\\d+$/.test(manifest.version)) throw new Error('Version Chrome invalide: '+manifest.version); const files=[...(manifest.content_scripts||[]).flatMap(script=>script.js||[]),'background.js']; for (const file of files) { if (!fs.existsSync(file)) throw new Error('Fichier manquant: '+file); cp.execFileSync(process.execPath, ['--check', file], {stdio:'inherit'}); } console.log('Version:', manifest.version);"
+          node -e "const fs=require('fs'); const cp=require('child_process'); const manifest=JSON.parse(fs.readFileSync('manifest.json','utf8')); if (manifest.manifest_version !== 3) throw new Error('Manifest V3 requis'); if (!/^\\d+\\.\\d+\\.\\d+$/.test(manifest.version)) throw new Error('Version Chrome invalide: '+manifest.version); const files=[...(manifest.content_scripts||[]).flatMap(script=>script.js||[]),manifest.background.service_worker]; for (const file of files) { if (!fs.existsSync(file)) throw new Error('Fichier manquant: '+file); cp.execFileSync(process.execPath, ['--check', file], {stdio:'inherit'}); } for (const resource of manifest.web_accessible_resources.flatMap(entry=>entry.resources)) { if (!resource.includes('*') && !fs.existsSync(resource)) throw new Error('Ressource manquante: '+resource); } console.log('Version:', manifest.version);"
 
       - name: Build upload directory
         shell: bash
         run: |
           rm -rf package
-          mkdir -p package/icons
-          node -e "const fs=require('fs'); const cp=require('child_process'); const manifest=JSON.parse(fs.readFileSync('manifest.json','utf8')); const files=[...(manifest.content_scripts||[]).flatMap(script=>script.js||[]),'background.js','manifest.json','LICENSE','README.md']; cp.execFileSync('cp', files.concat('package/'), {stdio:'inherit'});"
+          mkdir -p package/icons package/src/content package/src/background package/assets/templates package/assets/styles package/dist
+          cp manifest.json LICENSE README.md package/
+          cp -r src/content package/src/
+          cp -r src/background package/src/
+          cp -r assets/templates package/assets/
+          cp -r assets/styles package/assets/
+          cp dist/print.js package/dist/
           cp icons/* package/icons/
 
           requested_version="${{ inputs.version }}"

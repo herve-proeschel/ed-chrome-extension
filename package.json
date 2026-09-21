@@ -2,6 +2,14 @@
   "name": "ed-chrome-extension",
   "private": true,
   "scripts": {
-    "test": "node --test tests/*.test.js"
+    "test": "node --test tests/*.test.js",
+    "build": "esbuild src/print.jsx --bundle --minify --outfile=dist/print.js --format=iife"
+  },
+  "dependencies": {
+    "react": "^19.1.1",
+    "react-dom": "^19.1.1"
+  },
+  "devDependencies": {
+    "esbuild": "^0.25.9"
   }
 }
