@@ -25,6 +25,12 @@ jobs:
         with:
           node-version: 22
 
+      - name: Install dependencies and build print script
+        shell: bash
+        run: |
+          npm install
+          npm run build
+
       - name: Validate manifest and scripts
         shell: bash
         run: |
