@@ -1,7 +1,7 @@
 (function () {
     'use strict';
 
-    const allowedPaths = /^(templates\/[^/]+\.html|styles\/[^/]+\.css|print\.js)$/;
+    const allowedPaths = /^(assets\/templates\/[^/]+\.html|assets\/styles\/[^/]+\.css|dist\/print\.js)$/;
 
     window.addEventListener('message', event => {
         const request = event.data;
