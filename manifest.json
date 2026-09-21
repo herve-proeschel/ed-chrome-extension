@@ -2,7 +2,7 @@
   "manifest_version": 3,
   "name": "ÉcoleDirecte - Impression Cahier de Texte",
   "short_name": "ED Impression",
-  "version": "1.3.0",
+  "version": "1.4.0",
   "description": "Imprimez un cahier de texte clair avec tous les devoirs à venir sur ÉcoleDirecte.",
   "icons": {
     "16": "icons/icon.svg",
