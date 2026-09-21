@@ -23,7 +23,7 @@
   "content_scripts": [
     {
       "matches": ["https://www.ecoledirecte.com/*"],
-      "js": ["content.js"],
+      "js": ["runtime.js", "interception.js", "schedule.js", "homework.js", "content.js"],
       "run_at": "document_start",
       "world": "MAIN"
     }
