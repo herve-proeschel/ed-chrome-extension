@@ -22,9 +22,30 @@ Extension Chrome Manifest V3 pour imprimer proprement le cahier de texte et l'em
 
 Après chaque modification du code, cliquer sur **Recharger** dans la carte de l'extension, puis actualiser la page ÉcoleDirecte.
 
+## Développement
+
+Installer les dépendances depuis le dossier de l'extension :
+
+```bash
+npm install
+```
+
+Le script d'impression est organisé par composant dans `src/components/print/` :
+
+- `PrintApp.jsx` orchestre l'affichage et le lancement de l'impression.
+- `ScheduleView.jsx`, `ScheduleWeek.jsx` et `ScheduleEvent.jsx` affichent l'emploi du temps.
+- `HomeworkView.jsx` affiche les devoirs à venir.
+- `printUtils.js` regroupe le parsing des dates et la sécurisation du HTML des devoirs.
+
+Pour reconstruire le bundle d'impression après une modification :
+
+```bash
+npm run build
+```
+
 ## Tests locaux
 
-Les tests utilisent le test runner intégré à Node.js et ne nécessitent aucune dépendance supplémentaire :
+Les tests utilisent le test runner intégré à Node.js :
 
 ```bash
 npm test
